@@ -1,0 +1,132 @@
+
+* snobol4 -d 100M scab.sno
+
+-include 'random.sno'
+-include 'host.sno'
+
+        srandomdev()
+
+*       dictfile = 'twl06.txt'
+        dictfile = 'twl06.txt.test'
+
+
+* sort letters of word        
+        define('sortw(str)a,i,j') :(sortw_end)
+sortw   a = array(size(str))
+sw1     i = i + 1; str len(1) . a<i> = :s(sw1)
+        a = sort(a)
+sw2     j = j + 1; sortw = sortw a<j> :s(sw2)f(return)
+sortw_end   
+
+* subpermutations
+        define('subpermutations(str,res,stop)i,s1,s2') :(subpermutations_end)
+subpermutations
+        i = size(str)
+        gt(i, 1)                       :f(subpermutations_last)
+subpermutations_again
+        str len(1) . s1 rem . s2
+*       output = "XXX s1 = " s1 " s2 = " s2             ;* XXX still need to make sure we're doing all permutations
+        sorted_s2 = sortw(s2)
+        eq( res< sorted_s1 >, 1 )      :s(subpermutations_next)       ;* don't recurse in to here again if we've already done so once
+        res< sorted_s2 > = 1
+        str = s2 s1                             ;* stuff the character we picked off of the front back on to the end
+        subpermutations(s2, res, stop)          ;* recurse
+subpermutations_next
+        i = i - 1
+        gt(i, 0)                       :s(subpermutations_again)
+subpermutations_last
+        subpermutations = res          :(return)      ;* return the table of all anagram stems
+subpermutations_end
+
+
+* subpermutations2
+        define('subpermutations2(str)strlen,sw,i,s1,s2,pat,res') :(subpermutations2_end)
+subpermutations2
+        collect()
+        res = table()
+        i = 0
+        pat = pos(0)                                                  ;* pattern gets built as a function of letters in the sorted word we're looking searching for matches for
+subpermutations2_1
+        str len(1) . s1 rem . str       :f(subpermutations2_2)
+*       output = "subpermutations2 s1 = " s1
+*       pat = pat arbno(s1)             :(subpermutations2_1)         ;* really want 0-1 of these instead of 0+
+        pat = pat ( s1 | '' )           :(subpermutations2_1)
+subpermutations2_2
+        pat = pat pos( *strlen )                   ;* force it to match through to the end.  the * defers evaluation of strlen and we update this value each loop iteration.
+subpermutations2_3
+        i = i + 1
+        sw = ana_dict<i>                :f(subpermutations2_last)
+        strlen = size(sw)
+        sw pat                          :f(subpermutations2_3)
+        res< sw > = 1                   :(subpermutations2_2)
+subpermutations2_last
+        subpermutations2 = res          :(return)
+subpermutations2_end
+
+* main
+
+        input('dictfh', 10, '', dictfile)
+read_dict0
+        dictsize = dictsize + 1
+        tmp = dictfh    :s(read_dict0)
+
+        output = dictsize - 1 ' words in the dictionary'
+
+        dict = array(dictsize)
+        ana_dict = array(dictsize)              ;* the dictionary but each word in anagram-normalized format with its letters sorted lexigraphically
+        dictsize = 1
+        ana = table()                           ;*
+*       input('dictfh', 10, '', dictfile)       ;* set doesn't seem to work so just re-open it
+        rewind(10)                              ;* XXXX trying this instead
+read_dict1
+        word = dictfh                   :f(read_dict2)
+        dict<dictsize> = word
+
+        sw = sortw(word)
+
+        ana_dict<dictsize> = sw
+
+        ana<sw> = ana<sw> word ' '              ;* all possible words for a sorted set of letters
+
+        dictsize = dictsize + 1         :(read_dict1)
+read_dict2
+        output = "dictsize: " dictsize
+
+* pick a random word
+
+pick_random_word
+
+        rand = random()
+        rand = rand - dictsize * convert( rand / dictsize, 'integer' )      ;* modulo  XXXX use remdr() function
+        word = dict< rand >
+*       output = "word: " word
+        output = ''
+        output = "tiles: " sortw(word)
+
+        tmp = input
+        output = ana< sortw(word) >
+        host(1, "dict " word)
+
+* list all of the different words that could be made from those letters
+
+*        subwords = subpermutations(word, table())
+        subwords = subpermutations2(sortw(word))
+        subwords = convert( subwords, 'ARRAY' )
+*       output = "subwords datatype2: " datatype(subwords) 
+        i = 0
+        outstr = ''
+next_subword
+        i = i + 1
+        subwords<i,1>                   :f(subwords_last)
+*       output = "looking up anagrams for " subwords<i,1>       ;* should already be in sorted order...
+*       lt(i, size(subwords))     :s(next_subword)              ;* no function to easily find array dimension other than prototype?  guess not!
+        outstr = outstr ana< subwords<i,1> > ' '     :s(next_subword)
+subwords_last
+        outstr '  ' = ' '  :s(subwords_last)                    ;* we accumulated a lot of extra spaces so fold those down to single spaces between words
+        output = "all possible words: " outstr
+
+        :(pick_random_word)
+
+
+end
+

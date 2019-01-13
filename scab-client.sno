@@ -1,0 +1,407 @@
+
+* snobol4 -d 100M scab-client.sno
+
+-include 'random.sno'
+-include 'http.sno'
+
+        srandomdev()
+
+*       dictfile = 'twl06.txt'                          ;* whole thing
+*       dictfile = 'twl06.txt.test'                     ;* part way through a
+        dictfile = 'twl06.txt.test2'                    ;* through e
+
+        nums = '-0123456789'
+
+        data('tile.new(tile.letter,tile.id)')
+
+        rack = array('1:7')
+        rack_x = 1620
+        rack_y = 200
+
+* sort letters of word        
+        define('sortw(str)a,i,j') :(sortw_end)
+sortw   a = array(size(str))
+sw1     i = i + 1; str len(1) . a<i> = :s(sw1)
+        a = sort(a)
+sw2     j = j + 1; sortw = sortw a<j> :s(sw2)f(return)
+sortw_end   
+
+* subpermutations
+        define('subpermutations(str)strlen,sw,i,s1,s2,pat,res') :(subpermutations_end)
+subpermutations
+*       collect()                                                     ;* just gives an error about blowing the stack
+        str = sortw(str)                                              ;* dealing with anagram stems
+        res = table()
+        i = 0
+        pat = pos(0)                                                  ;* pattern gets built as a function of letters in the sorted word we're looking searching for matches for
+*       res< str > = 1                                                ;* start with the anagrams of the word itself; no, that's just the whole rack of scrabble tiles
+subpermutations_1
+        str len(1) . s1 rem . str         :f(subpermutations_2)
+        pat = pat ( s1 | '' )             :(subpermutations_1)
+subpermutations_2
+        pat = pat pos( *strlen )                   ;* force it to match through to the end.  the * defers evaluation of strlen and we update this value each loop iteration.
+subpermutations_3
+        i = i + 1
+        sw = ana_dict<i>                  :f(subpermutations_last)
+        strlen = size(sw)
+        sw pat                            :f(subpermutations_3)
+        res< sw > = 1                     :(subpermutations_2)
+subpermutations_last
+        subpermutations = res             :(return)
+subpermutations_end
+
+
+* http_get() modified from HTTP.OPEN() to add user headers
+
+        define("http_get(ioname,host,path,port,headers)") :(http_get_end)
+http_get
+        port = ident(port) "80"
+     output "XXX http_get port = " port
+        tcp.open(ioname, host, port, HTTP.RECL)           :f(freturn)
+        $ioname = "GET " path " HTTP/1.0" HTTP.CRLF
++               "User-Agent: " HOST() HTTP.CRLF
++               "Host: " host HTTP.CRLF
++               headers
++               HTTP.CRLF                                 :(return)
+http_get_end
+
+* move_tile
+
+* curl 'http://slowass.net:11704/?x=1132&y=52&id=card018&action=move' -H 'Host: slowass.net:11704' -H 'User-Agent: Mozilla/5.0 (X11; OpenBSD amd64; rv:56.0) Gecko/20100101 Firefox/66.0' -H 'Accept: */*' -H 'Accept-Language: en-US,en;q=0.5' --compressed -H 'Referer: http://slowass.net:11704/?action=board' -H 'Cookie: sid=42522100784659544515' -H 'DNT: 1' -H 'Connection: keep-alive'
+
+        define('move_tile(tile,x,y)')                     :(move_tile_end)          
+move_tile                                
+        output = "move tile..."
+        http_get( .webfh, 'slowass.net', '/?action=move&id=' tile.id(tile) '&x=' x '&y=' y, 11704, cookies )  :f(http_error)
+move_read
+        tmp = webfh                                       :s(move_read)
+        http.close(.webfh)
+                                                          :(return)
+move_tile_end
+
+* dump_rack
+
+        define('dump_rack()')                             :(dump_rack_done)
+dump_rack
+        output = 'rack:'
+        i = 0
+dump_rack_next
+        i = i + 1
+        tile = rack<i>                              :f(return)
+        letter = differ(tile) tile.letter( tile )                                             ;* if tile isn't null, get the letter off of it   XXX put this in a subroutine I guess
+        letter = ident(tile) ' '                                                              ;* if tile is null, use ' '
+        output = i ': ' letter                      :(dump_rack_next)
+dump_rack_done
+
+* dump_board
+
+        define('dump_board()')                             :(dump_board_done)
+dump_board
+        y = 0
+dump_board_y
+        y = lt(y, 15) y + 1                                :f(return)
+        x = 0
+        out = ''
+dump_board_x
+        tile = board<x = x + 1, y>
+        letter = differ(tile) tile.letter( tile )                                             ;* if tile isn't null, get the letter off of it
+        letter = ident(tile) ' '                                                              ;* if tile is null, use ' '
+        out = out letter 
+        output = eq(x, 15) out
+        lt(x, 15)                                          :s(dump_board_x)f(dump_board_y)
+dump_board_done
+
+* find_tile_in_rack
+
+        define('find_tile_in_rack(letter),i,tile')         :(find_tile_in_rack_end)
+find_tile_in_rack
+        i = 0
+find_tile_in_rack_next
+        tile = rack< i = i + 1 >                           :f(freturn)                       ;* out of positions in the rack to look at
+        differ(tile)                                       :f(find_tile_in_rack_next)        ;* skip to the next tile if this one is null
+        ident( tile.letter(tile), letter )                 :f(find_tile_in_rack_next)        ;* skip to the next tile if this isn't the one being searched for
+        find_tile_in_rack = tile
+        rack< i > = ''
+                                                           :(return)
+find_tile_in_rack_end
+     
+* draw_rack
+
+        define('draw_rack()i,random_sushi,letters')        :(draw_rack_done)
+draw_rack
+        output = "drawing tiles..."
+        i = 0
+        random_sushi = -1
+        letters = ''
+draw_rack_next
+        tile = rack< i = i + 1 >                    :f(draw_rack_last)
+        differ(tile)                                :f(draw_rack_1)                          ;* branch if tile is empty
+        letters = letters tile.letter(tile)         :(draw_rack_next)
+draw_rack_1
+        output = "drawing a tile for slot " i 
+        last_sushi = last_sushi + 1
+        random_sushi = remdr( random(), last_sushi )
+        move_tile( sushi< random_sushi >, 10, 10 )                                           ;* turn it over before moving it to our rack
+        move_tile( sushi< random_sushi >, rack_x, rack_y + ( ( i - 1 ) * 60 ) )
+                                                    :(draw_rack_next)
+draw_rack_last
+        draw_rack = letters                         :(return)
+draw_rack_done
+     
+* read_board
+
+        function('read_board()i,x,y')               :(read_board_last)
+read_board
+        board = array('1:15,1:15')
+        sushi = array('1:100')
+
+        last_board = 0
+        last_tiles = 0
+        last_sushi = 0
+        board_is_empty = 1
+        http_get( .webfh, 'slowass.net', '/?action=board', 11704, cookies )   :f(http_error)
+read_board_again
+        line = webfh                                             :f(read_board_done)
+*       output = line
+*       <img id="card095" alt="card095" src="/jpg/_.png" style="position:absolute; left: 616px; top: -9px; z-index: 1396; width: 57px; height: 57px;" onload="Drag.init(this);" >
+        line '<img id="' arb . id '" alt="' arb '" src="/jpg/' any('abcdefghijklmnopqrstuvwxyz_') . letter '.png" style="position:absolute; left: ' 
++            span(nums) . x 'px; top: ' span(nums) . y 'px; z-index'
++                                                                :f(read_board_again)
+*       output = "found letter " letter " x " x " y " y " id " id
+
+*       undrawn tiles still in the pile
+board_sort_tiles_0
+        lt( x, 750 ) lt( y, 125 ) gt( y, -30 )                   :f(board_sort_tiles_1)
+        sushi< last_sushi = last_sushi + 1 > = tile.new(letter, id)
+                                                                 :(read_board_again)
+board_sort_tiles_1
+         
+*       tiles on the board
+        gt( x, 195 ) gt( y, 252 ) lt( x, 1104 ) lt( y, 1137 )    :f(board_sort_tiles_2)
+*       output = "board:  prelim:  tile " letter " is at " x " " y
+        x = 1 + ( ( x - 195 ) / 60 );
+        y = 1 + ( ( y - 252 ) / 59 );
+*       output = "board:  tile " letter " is at " x " " y
+        board<x, y> = tile.new(letter, id)
+        board_is_empty = 0
+                                                                 :(read_board_again)
+board_sort_tiles_2
+        eq( x, rack_x ) ge( y, rack_y ) le( y, rack_y + 60 * 7)  :f(board_sort_tiles_3)
+      output = "found a tile on our rack at y " y
+        y = 1 + ( y - rack_y) / 60
+      output = "     that's rack at position " y
+        rack<y> = tile.new(letter, id)
+                                                                 :(read_board_again)
+board_sort_tiles_3
+        output = 'XXX tile out of range: ' x ' ' y ' ' letter    :(read_board_again)          ;* unless bugs appear, this is fine... any out of range tile is just in someone's rack
+read_board_done
+        http.close(.webfh)                                       :(return)
+read_board_last
+
+*
+* main
+*
+
+        input('dictfh', 10, '', dictfile) :f(end)
+read_dict0
+        dictsize = dictsize + 1
+        tmp = dictfh    :s(read_dict0)
+
+        output = dictsize - 1 ' words in the dictionary'
+
+        dict = array(dictsize)
+        ana_dict = array(dictsize)              ;* the dictionary but each word in anagram-normalized format with its letters sorted lexigraphically
+        dictsize = 1
+        ana = table()                           ;*
+        rewind(10)                              ;* re-read the file.  since arrays don't dynamically expand, this is done in two passes, and now we have arrays to put this in.
+read_dict1
+        word = dictfh                   :f(read_dict2)
+        dict<dictsize> = word
+
+        sw = sortw(word)
+
+        ana_dict<dictsize> = sw
+
+        ana<sw> = ana<sw> word ' '              ;* all possible words for a sorted set of letters
+
+        dictsize = dictsize + 1         :(read_dict1)
+read_dict2
+        output = "dictsize: " dictsize
+
+
+        output = "host: " host()
+
+
+        http_get( .webfh, 'slowass.net', '/', 11704, 'Cookie: sid=' sid HTTP.CRLF )      :f(http_error)
+login_page_read
+        tmp = webfh                                            :f(login_page_read_done)
+        ;*   Set-Cookie: sid=83062304708249829056; path=/; expires=Sun, 13-Jan-2019 21:09:41 GMT
+        tmp "Set-Cookie: sid=" span(nums) . sid ';'            :f(login_page_read)
+        output = "sid = " sid                                  :(login_page_read)
+login_page_read_done
+        http.close(.webfh)
+
+        cookies = 'Cookie: sid=' sid HTTP.CRLF
+
+        output = "login page..."
+
+        http_get( .webfh, 'slowass.net', '/?player_id=computer&password=fred&gamepass=wee', 11704, cookies )  :f(http_error)
+login_read
+*       tmp = webfh                      :s(login_done)
+        output = webfh                   :s(login_read)
+        http.close(.webfh)
+
+        output = "welcome page..."
+
+        http_get( .webfh, 'slowass.net', '/', 11704, cookies )  :f(http_error)
+welcome_page_read
+*        tmp = webfh                                            :s(welcome_page_read)
+        output = webfh                                          :s(welcome_page_read)
+        http.close(.webfh)
+
+
+*
+*       start of main play loop
+*
+
+*       we read the board, draw tiles as needed, make a play, then draw tiles again
+
+board_read
+
+        output = "board page..."
+
+        read_board()
+
+* draw as needed
+
+        letters = draw_rack()
+        dump_rack()
+        read_board()
+
+* dump state
+
+*        i = 0
+*dump_tile_pile
+*        i = i + 1
+*        output = i ': ' sushi<i>                    :s(dump_tile_pile)
+
+
+* dump the board
+
+        dump_board()
+
+* dump the rack
+
+        dump_rack()
+
+
+* what words do we have in our hand before looking at anything else?
+
+        subwords = subpermutations(sortw(letters))
+        subwords = convert( subwords, 'ARRAY' )
+*       output = "subwords datatype2: " datatype(subwords)
+        i = 0
+        outstr = ''
+next_subword
+        i = i + 1
+        subwords<i,1>                   :f(subwords_last)
+        outstr = outstr ana< subwords<i,1> > ' '                :s(next_subword)
+subwords_last
+        outstr '  ' = ' '  :s(subwords_last)                    ;* we accumulated a lot of extra spaces so fold those down to single spaces between words
+        output = "all possible words: " outstr
+
+
+* smack something down if it's the first turn
+
+        eq(board_is_empty, 1)                              :f(board_is_not_empty)
+
+        word = subwords<1,1>
+        play_len = size(word)
+        output = "playing " word
+        y = 8
+        x = 8 - convert(play_len / 2, 'integer')
+first_play
+        word len(1) . letter = ''                          :f(first_play_last)
+        tile = find_tile_in_rack(letter)                   :f(tile_not_found_error)
+     output = "XXX moving " letter " to " x " , " y
+        move_tile( tile, 204 + ( ( x - 1 ) * 63), 268 + ( ( y - 1 ) * 61 ) )                      ;* placing tiles on the board may need tweaking XX
+        x = x + 1                                          :(first_play)
+first_play_last
+
+        draw_rack()
+
+                                                           :(wait_for_the_human)
+
+* board isn't empty so have to try to fit a play on somewhere
+
+board_is_not_empty
+
+        board_rows = array('15')                                ;* each row, top to bottom
+        board_cols = array('15')                                ;* each column, left to right
+
+        y = 0
+crawl_board_y
+        y = lt(y, 15) y + 1                                :f(crawl_board_done)
+        x = 0
+        out = ''
+crawl_board_x
+        tile = board<x = x + 1, y>
+        letter = differ(tile) tile.letter( tile )                                             ;* if tile isn't null, get the letter off of it
+        letter = ident(tile) len(1)                                                           ;* if tile is null, use len(1)
+        board_rows<y> = board_rows<y> letter
+        board_cols<x> = board_rows<x> letter
+*       output = "debug: datatype board_rows y = " y " is " datatype(board_rows<y>)
+        lt(x, 15)                                          :s(crawl_board_x)f(crawl_board_y)
+crawl_board_done
+
+* XXXXXXXXXXXXXX try to match our words to that pattern, which is lame and half-assed
+* XXXXXXXXXXXXXX make sure everything on the board after that is still a word or else iterate
+
+
+       
+* wait for the human
+
+wait_for_the_human
+
+        output = "press enter..."
+        tmp = input                                                ;* wait for the human
+                                         :(board_read)             ;* loop
+
+*
+* error messages
+*
+
+
+http_error
+        output = "HTTP something failed"         :(end)
+
+tile_not_found_error
+        output = "find_tile_in_rack couldn't locate the tile we wanted"         :(end)
+
+
+*        output = "tiles: " sortw(word)
+*        output = ana< sortw(word) >
+
+*        subwords = subpermutations(sortw(word))
+*        subwords = convert( subwords, 'ARRAY' )
+*        outstr = outstr ana< subwords<i,1> > ' '     :s(next_subword)
+
+
+end
+
+
+
+
+* v/ okay, we're logged in, and we have a copy of the board, and we know how to make words from a set of letters in our rack
+* v/ need to draw/maintain our rack
+
+* build patterns from the board that we can try to match our words to?
+* look for all non-words on the board before play and after considering each play
+
+* need to pick out words that actually attach
+*     that could be done by picking a word and seeing if it breaks anything 
+* subpermutations maybe needs to know about edges of the board and existing letters
+*     then it would have to be able to insert one word in to the middle of that somewhere
+*     that would have to iterate over the 15 rows and columns, tracking score (maybe, or just length as a stop-gap), rejecting what doesn't fit    
+
+

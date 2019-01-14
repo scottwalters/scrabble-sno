@@ -14,7 +14,6 @@
 
         data('tile.new(tile.letter,tile.id)')
 
-        rack = array('1:7')
         rack_x = 1620
         rack_y = 200
 
@@ -27,25 +26,29 @@ sw2     j = j + 1; sortw = sortw a<j> :s(sw2)f(return)
 sortw_end   
 
 * subpermutations
-        define('subpermutations(str)strlen,sw,i,s1,s2,pat,res') :(subpermutations_end)
+        define('subpermutations(str)strlen,sw,i,s1,s2,pat,res,res_i,anagrams,word') :(subpermutations_end)
 subpermutations
 *       collect()                                                     ;* just gives an error about blowing the stack
-        str = sortw(str)                                              ;* dealing with anagram stems
-        res = table()
-        i = 0
+*       str = dict<str>                                               ;* can't do this because a random jumble of rack letters probably won't be in the dictionary
+        str = sortw(str)
+        res = array(100)
+        i = 0                                                         ;* index in to ana_dict, looking for matches
+        res_i = 0                                                     ;* index in to res, recording results
         pat = pos(0)                                                  ;* pattern gets built as a function of letters in the sorted word we're looking searching for matches for
-*       res< str > = 1                                                ;* start with the anagrams of the word itself; no, that's just the whole rack of scrabble tiles
 subpermutations_1
-        str len(1) . s1 rem . str         :f(subpermutations_2)
-        pat = pat ( s1 | '' )             :(subpermutations_1)
+        str len(1) . s1 rem . str                     :f(subpermutations_2)         ;* pick out the next letter from our sorted rack tiles
+        pat = pat ( s1 | '' )                         :(subpermutations_1)          ;* add a pattern either match it or not
 subpermutations_2
-        pat = pat pos( *strlen )                   ;* force it to match through to the end.  the * defers evaluation of strlen and we update this value each loop iteration.
+        pat = pat pos( *strlen )                   ;* force it to match through to the end.  the * defers evaluation of strlen and we update this value each loop iteration.  XXX probably a better way to match the end of the string.
 subpermutations_3
         i = i + 1
-        sw = ana_dict<i>                  :f(subpermutations_last)
+        sw = ana_dict<i>                              :f(subpermutations_last)
         strlen = size(sw)
-        sw pat                            :f(subpermutations_3)
-        res< sw > = 1                     :(subpermutations_2)
+        sw pat                                        :f(subpermutations_3)
+        anagrams = ana< sw >                                          ;* add all of the anagrams to res
+subpermutations_4          
+        anagrams span(&lcase) . word span(' ') = ''   :f(subpermutations_3)
+        res< res_i = res_i + 1 > = word               :(subpermutations_4)
 subpermutations_last
         subpermutations = res             :(return)
 subpermutations_end
@@ -56,7 +59,7 @@ subpermutations_end
         define("http_get(ioname,host,path,port,headers)") :(http_get_end)
 http_get
         port = ident(port) "80"
-     output "XXX http_get port = " port
+        output "http_get port = " port
         tcp.open(ioname, host, port, HTTP.RECL)           :f(freturn)
         $ioname = "GET " path " HTTP/1.0" HTTP.CRLF
 +               "User-Agent: " HOST() HTTP.CRLF
@@ -127,6 +130,9 @@ find_tile_in_rack_end
      
 * draw_rack
 
+* draw tiles as needed but return a string listing the letters we do have.
+* if less than a full rack (and it isn't the end of the game), reload the board and call again to see what was drawn.
+
         define('draw_rack()i,random_sushi,letters')        :(draw_rack_done)
 draw_rack
         output = "drawing tiles..."
@@ -150,10 +156,15 @@ draw_rack_done
      
 * read_board
 
-        function('read_board()i,x,y')               :(read_board_last)
+* request the board from the server, and update rack, board, and sushi arrays, their sizes, and board_is_empty.
+* we do this after moving tiles instead of trying to model our own concept of the game board across changes.
+
+        define('read_board()i,x,y')                 :(read_board_last)
 read_board
+        output = "re-reading board..."
         board = array('1:15,1:15')
         sushi = array('1:100')
+        rack = array('1:7')
 
         last_board = 0
         last_tiles = 0
@@ -198,9 +209,104 @@ read_board_done
         http.close(.webfh)                                       :(return)
 read_board_last
 
+* build_board_rows_and_cols_arrays
+
+        define('build_board_rows_and_cols_arrays()x,y,tile,pat,latter')  :(build_board_rows_and_cols_arrays_end)      ;* XXX kinda need something that traverses an calls a callback
+build_board_rows_and_cols_arrays
+
+        board_rows_pat = array('15')                                ;* each row, top to bottom
+        board_cols_pat = array('15')                                ;* each column, left to right
+
+        board_rows_text = array('15')                               ;* again but for a text representation
+        board_cols_text = array('15')
+
+        y = 0
+crawl_board_y
+        y = lt(y, 15) y + 1                                :f(return)
+        x = 0
+crawl_board_x
+        tile = board<x = x + 1, y>
+
+        pat = differ(tile) tile.letter( tile )                                             ;* if tile isn't null, get the letter off of it
+        pat = ident(tile) len(1)                                                           ;* if tile is null, use len(1)
+        board_rows_pat<y> = board_rows_pat<y> pat
+        board_cols_pat<x> = board_cols_pat<x> pat
+
+        letter = differ(tile) tile.letter( tile )
+        letter = ident(tile) ' '
+        board_rows_text<y> = board_rows_text<y> letter
+        board_cols_text<x> = board_cols_text<x> letter
+
+*       output = "debug: datatype board_rows y = " y " is " datatype(board_rows<y>)
+        lt(x, 15)                                          :s(crawl_board_x)f(crawl_board_y)
+build_board_rows_and_cols_arrays_end
+
+* count_invalid_words
+
+* count the number of words on the board that aren't in the dictionary.
+* used so that we can make sure that something we're looking at isn't an illegal play.
+* call build_board_rows_and_cols_arrays() first so that board_rows_text and board_cols_text arrays are set.
+
+        define('count_invalid_words(),x,y')                :(count_invalid_words_end)
+count_invalid_words
+        num_invalid_words = 0                                                              ;* we don't have to challenge the player but for now we don't want to add invalid plays
+
+        y = 0
+verify_rows_next_row
+        row = board_rows_text<y = y + 1>                   :f(verify_rows_done)
+verify_rows_next_word
+        row arb ( any(&lcase) span(&lcase) ) . word span(' ') = ''
++                                                          :f(verify_rows_next_row)
+        output = "word to validate = " word
+        output = ident( dict<word> ) "invalid word >" word "<"                                ;* if dict<word> is null; debugging
+        num_invalid_words = ident( dict<word> ) num_invalid_words + 1                         ;* if dict<word> is null
+                                                           :(verify_rows_next_word)
+verify_rows_done
+
+        x = 0
+verify_cols_next_col
+        col = board_cols_text<x = x + 1>                   :f(verify_cols_done)
+verify_cols_next_word
+        col arb ( any(&lcase) span(&lcase) ) . word span(' ') = ''
++                                                          :f(verify_cols_next_col)
+        output = "word to validate = " word
+        output = ident( dict<word> ) "invalid word >" word "<"                                ;* if dict<word> is null; debugging
+        num_invalid_words = ident( dict<word> ) num_invalid_words + 1                         ;* if dict<word> is null
+                                                           :(verify_cols_next_word)
+verify_cols_done
+    output = "XXX number invalid words: " num_invalid_words
+    count_invalid_words = num_invalid_words                :(return)
+count_invalid_words_end
+
+* longest_word
+
+        define('longest_word(arr)word,i')                        :(longest_word_end)
+longest_word
+        i = 0
+        longest_word = ''
+longest_word_next
+        word = arr< i = i + 1 >                                  :f(return)
+        longest_word = gt( size(word), size(longest_word) ) word :(longest_word_next)
+longest_word_end
+
+* join_array
+
+        define('join_array(arr)out,i')                     :(join_array_done)
+join_array
+        out = ''
+        i = 0
+join_array_next
+        out = differ(out) out ' '                          ;* if not empty, add a space
+        out = out arr< i = i + 1 >                         :s(join_array_next)
+        join_array = out                                   :(return)
+join_array_done
+
+
 *
 * main
 *
+
+* figure out how many words are in the dictionary so we can allocate arrays for them
 
         input('dictfh', 10, '', dictfile) :f(end)
 read_dict0
@@ -209,16 +315,23 @@ read_dict0
 
         output = dictsize - 1 ' words in the dictionary'
 
-        dict = array(dictsize)
-        ana_dict = array(dictsize)              ;* the dictionary but each word in anagram-normalized format with its letters sorted lexigraphically
-        dictsize = 1
-        ana = table()                           ;*
+* build dict, ana, ana_dict, dict_table from the dictionary
+
+        dict = table()                          ;* quickly lookup whether a word exists
+        ana = table()                           ;* given an anagram-normalized word (letters sorted), a space separated string of all possible anagrams
+        ana_dict = array(dictsize)              ;* each word in anagram-normalized format with its letters sorted lexigraphically, used to find words for a set of tiles
+        dictsize = 1                            ;* index into ana_dict while we're reading
+
         rewind(10)                              ;* re-read the file.  since arrays don't dynamically expand, this is done in two passes, and now we have arrays to put this in.
 read_dict1
+
         word = dictfh                   :f(read_dict2)
-        dict<dictsize> = word
+
+*       dict<dictsize> = word                   ;* this used to be an array
 
         sw = sortw(word)
+
+        dict<word> = sw
 
         ana_dict<dictsize> = sw
 
@@ -247,16 +360,16 @@ login_page_read_done
 
         http_get( .webfh, 'slowass.net', '/?player_id=computer&password=fred&gamepass=wee', 11704, cookies )  :f(http_error)
 login_read
-*       tmp = webfh                      :s(login_done)
-        output = webfh                   :s(login_read)
+        tmp = webfh                      :s(login_read)
+*       output = webfh                   :s(login_read)
         http.close(.webfh)
 
         output = "welcome page..."
 
         http_get( .webfh, 'slowass.net', '/', 11704, cookies )  :f(http_error)
 welcome_page_read
-*        tmp = webfh                                            :s(welcome_page_read)
-        output = webfh                                          :s(welcome_page_read)
+         tmp = webfh                                            :s(welcome_page_read)
+*       output = webfh                                          :s(welcome_page_read)
         http.close(.webfh)
 
 
@@ -274,57 +387,40 @@ board_read
 
 * draw as needed
 
-        letters = draw_rack()
-        dump_rack()
-        read_board()
-
-* dump state
-
-*        i = 0
-*dump_tile_pile
-*        i = i + 1
-*        output = i ': ' sushi<i>                    :s(dump_tile_pile)
-
+        draw_rack()
+        read_board()                                      ;* if draw_rack() did draw, then we need to update our rack, etc from the board
+        letters = draw_rack()                             ;* what we have in our hand after possibily drawing and reloading
+        output = "rack: " letters
 
 * dump the board
 
+        output = "board:"
+
         dump_board()
 
-* dump the rack
+* all possible plays with the letters in our rack
 
-        dump_rack()
+        words = subpermutations(letters)                        ;* XXXXXXXXX testing
 
+        output = "all possible words: " join_array(words)
+        
 
-* what words do we have in our hand before looking at anything else?
-
-        subwords = subpermutations(sortw(letters))
-        subwords = convert( subwords, 'ARRAY' )
-*       output = "subwords datatype2: " datatype(subwords)
-        i = 0
-        outstr = ''
-next_subword
-        i = i + 1
-        subwords<i,1>                   :f(subwords_last)
-        outstr = outstr ana< subwords<i,1> > ' '                :s(next_subword)
-subwords_last
-        outstr '  ' = ' '  :s(subwords_last)                    ;* we accumulated a lot of extra spaces so fold those down to single spaces between words
-        output = "all possible words: " outstr
-
-
-* smack something down if it's the first turn
+* smack something down onto the board if it's the first turn
 
         eq(board_is_empty, 1)                              :f(board_is_not_empty)
 
-        word = subwords<1,1>
-        play_len = size(word)
+        output = "board is empty"
+*       word = subwords<1,1>
+        word = longest_word( words )
         output = "playing " word
+        play_len = size(word)
         y = 8
         x = 8 - convert(play_len / 2, 'integer')
 first_play
         word len(1) . letter = ''                          :f(first_play_last)
         tile = find_tile_in_rack(letter)                   :f(tile_not_found_error)
-     output = "XXX moving " letter " to " x " , " y
-        move_tile( tile, 204 + ( ( x - 1 ) * 63), 268 + ( ( y - 1 ) * 61 ) )                      ;* placing tiles on the board may need tweaking XX
+        output = "moving " letter " to " x " , " y
+        move_tile( tile, 204 + ( ( x - 1 ) * 62), 268 + ( ( y - 1 ) * 61 ) )                      ;* placing tiles on the board may need tweaking XX
         x = x + 1                                          :(first_play)
 first_play_last
 
@@ -332,30 +428,36 @@ first_play_last
 
                                                            :(wait_for_the_human)
 
+
 * board isn't empty so have to try to fit a play on somewhere
 
 board_is_not_empty
 
-        board_rows = array('15')                                ;* each row, top to bottom
-        board_cols = array('15')                                ;* each column, left to right
+        output = "board is not empty"
 
-        y = 0
-crawl_board_y
-        y = lt(y, 15) y + 1                                :f(crawl_board_done)
-        x = 0
-        out = ''
-crawl_board_x
-        tile = board<x = x + 1, y>
-        letter = differ(tile) tile.letter( tile )                                             ;* if tile isn't null, get the letter off of it
-        letter = ident(tile) len(1)                                                           ;* if tile is null, use len(1)
-        board_rows<y> = board_rows<y> letter
-        board_cols<x> = board_rows<x> letter
-*       output = "debug: datatype board_rows y = " y " is " datatype(board_rows<y>)
-        lt(x, 15)                                          :s(crawl_board_x)f(crawl_board_y)
-crawl_board_done
+        build_board_rows_and_cols_arrays()                                                 ;* updates board_rows_pat, board_cols_pat, board_rows_text, board_cols_text arrays
 
-* XXXXXXXXXXXXXX try to match our words to that pattern, which is lame and half-assed
+        num_invalid_words = count_invalid_words()
+
+        word = longest_word( words )                   ;* XXX sort these descending by length?  sort() will sort by a field in a multidim array.  or else for now just iterate over them in their current arbitrary order trying to find one that fits anywhere.
+
+* v/ count how many invalid words are on the board
+* XXXXXXXXXX loop over words
+* XXXXXXXXXXX try to match our words to board_cols_pat/board_rows_pat, which is lame and half-assed.
+*     XXXXXXX take letters in the row/col on the board and temp add them to our rack
+*                   this is super messy as it lets plays build on existing words, but then we have to check that they didn't have to move that letter to use it
+*                                                             but it shouldn't have tried to move the letter if the board_cols_pat/board_rows_pat matched
+* XXXXXXXX make a copy of board_cols_text/board_rows_text every time we try to fit a word.  copy() works on arrays.
+*          experimentally lay down the word
+*          count how many invalid words are on the board again and make sure it hasn't increased
+
+
+* XXXX dict should point to cached anagram-stemmed words so we only need to run wsort() while loading the dictionary... no, that doesn't work.  jumbles of tiles have to be sorted.
+; XXXX dict<> is still used to quickly validate words on the board but AFAIK there's no reason to point it to its anagram stem.  but OTOH re-used strings are cheap in SNOBOL.
+
+
 * XXXXXXXXXXXXXX make sure everything on the board after that is still a word or else iterate
+*       XXX either need a non-stemmed table of the dictionary or else a function to do binary lookups on the dict array
 
 
        

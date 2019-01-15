@@ -72,11 +72,6 @@ subpermutations2
         i = 0                                                         ;* index in to ana_dict, looking for matches
         res_i = 0                                                     ;* index in to res, recording results
         pat = pos(0)                                                  ;* pattern gets built as a function of letters in the sorted word we're looking searching for matches for
-
-* XXXXXXX may want to build a pattern based on part of the line
-*        pat3 = pos(0)
-*subpermutations2_0                                                    ;* 
-
 subpermutations2_1
         str len(1) . s1 rem . str                       :f(subpermutations2_2)         ;* pick out the next letter from our sorted rack tiles
         pat = pat ( s1 | '' )                           :(subpermutations2_1)          ;* add a pattern to either match it or not
@@ -91,7 +86,7 @@ subpermutations2_3
         anagrams = ana< sw >                                          ;* add all of the anagrams to res
 subpermutations2_4          
         anagrams ( span(&lcase) . word span(' ') ) = '' :f(subpermutations2_3)
-    output = 'XXXX subpermutations2 trying to match >' prefix word '< against extra restriction pattern which looks like >' line '<'
+    output = 'XXX subpermutations2 trying to match >' prefix word '< against extra restriction pattern which looks like >' line '<'
 
 * complicated and not working for some reason now
         (prefix word '**************' ) pat2            :f(subpermutations2_4)   ;* if user extra user supplied pat doesn't match the word prefixed with prefix, don't return it
@@ -123,7 +118,10 @@ http_get_end
 
         define('move_tile(tile,x,y)')                     :(move_tile_end)          
 move_tile                                
-        output = "move tile..."
+        output = 'move tile...'
+        output = ident(x) 'x is null'                     ;* getting scab-client.sno:127: Error 4 in statement 165 at level 2 Null string in illegal context on the http_get() line
+        output = ident(y) 'y is null'
+        output = ident(cookies) 'cookies is null'
         http_get( .webfh, 'slowass.net', '/?action=move&id=' tile.id(tile) '&x=' x '&y=' y, 11704, cookies )  :f(http_error)
 move_read
         tmp = webfh                                       :s(move_read)
@@ -147,7 +145,7 @@ dump_rack
 dump_rack_next
         i = i + 1
         tile = rack<i>                              :f(return)
-        letter = differ(tile) tile.letter( tile )                                             ;* if tile isn't null, get the letter off of it   XXX put this in a subroutine I guess
+        letter = differ(tile) tile.letter( tile )                                             ;* if tile isn't null, get the letter off of it   XXX put this in a subroutine maybe
         letter = ident(tile) ' '                                                              ;* if tile is null, use ' '
         output = i ': ' letter                      :(dump_rack_next)
 dump_rack_done
@@ -267,7 +265,7 @@ read_board_last
 
 * build_board_lines_arrays
 
-        define('build_board_lines_arrays(board)x,y,tile,pat,latter')  :(build_board_lines_arrays_end)      ;* XXX kinda need something that traverses and calls a callback
+        define('build_board_lines_arrays(board)x,y,tile,pat,latter')  :(build_board_lines_arrays_end)
 build_board_lines_arrays
 
         board_lines_pat = array(30, pos(0))                         ;* 15 rows then 15 columns; play validation pattern
@@ -308,8 +306,7 @@ count_invalid_words
 verify_rows_next_row
         row = arr<i = i + 1>                               :f(verify_rows_done)
 verify_rows_next_word
-        row arb ( any(&lcase) span(&lcase) ) . word span(' ') = ''
-+                                                          :f(verify_rows_next_row)
+        row arb ( any(&lcase) span(&lcase) ) . word = ''   :f(verify_rows_next_row)
         output = "word to validate = " word
         output = ident( dict<word> ) "invalid word >" word "<"                                ;* if dict<word> is null; debugging
         num_invalid_words = ident( dict<word> ) num_invalid_words + 1                         ;* if dict<word> is null
@@ -502,6 +499,12 @@ first_play_last
 
 * board isn't empty so have to try to fit a play on somewhere
 
+* start with a window size of 7 (or less, if our rack is smaller) -- we're looking for spans of blank tiles this big to play the same number of tiles in
+* move left to right, top to bottom, looking for horizontal plays, then top to bottom, left to right, looking for vertical plays
+* for any window we look at, if it borders letters on either side, include those letters but restrict results to things with letters in those positions
+* if the word fits, make sure we haven't introduced non-words in the other play direction, then play it
+* if we get to the end without fitting a word, try a smaller window size
+
 board_is_not_empty
 
         output = "board is not empty"
@@ -532,19 +535,6 @@ play_next_line
 
 play_next_offset
 
-;* XXX need a window of the section of the board to look at fitting a play in to
-;* XXX may have to iterate on shortening the window
-;*     we want to connect on to an existing thing
-;* XXX 8 spaces is enough to bingo while integrating an existing letter from the board
-;      XXXXXX okay, how about starting at 7 space window size, *plus* one for every letter that connects to
-;      XXXXXX have to filter results from subpermutations() for things that match the board pattern from that given offset in the pattern... thankfully, we have a pattern already.
-
-;* XXX some how enforce connecting to existing words on the board
-;      may have to do that fairly manually, looking at possible prev/next lines and spots before/after the play on that same line
-;      that's in addition to making sure the play forms words
-
-;* XXX may need a subpermutations() param to specify an exact result size we're looking for that corresponds to the window size (which includes letters before and after the play)
-
         le( offset + window_size, 15 )                           :f(play_next_line)
 
         word_leading_window = ''
@@ -569,9 +559,9 @@ play_2  subline_text span(' ') = ''                                :s(play_2)   
 
       output = 'XXX size of characters in window: ' size(subline_text) ' exact_size specified to subpermutations2: ' window_size + size(subline_text)
 
-        gt(size(subline_text))                                     :f(play_advance_offset)        
+        gt(size(subline_text))                                     :f(play_advance_offset)
 
-* XXX also pass the pattern in and pre-filter by that
+                                                                                                    ;* also pass the pattern in and pre-filter by that
 
         line_text len( offset ) . offset_text                                                       ;* offset_text is text of stuff already there before our offset
 
@@ -585,22 +575,22 @@ play_2  subline_text span(' ') = ''                                :s(play_2)   
 
         word = longest_word( words )                   
 
+* XXX yes, iterate on those
+
         output = "okay, at least one word found... going to try to play " word
 
 * this uses window_size instead of size(letters) because with shrunk window sizes, we won't use all of our letters
 
         eq(size(word), window_size + size(subline_text))                 :f(play_advance_offset)   ;* XXX should maybe loop on other possible words instead
 
-      output = 'XXX and that word is long enough to span the slot we were looking at'
-
       output = 'XXX trying to play word: ' word ' at offset ' offset ' line ' i
 
-* XXXX unless we change a copy of the board and then generate board_lines_text from that to test on
-*       board_lines_text_cp<i> pos(0) len(offset) len(word) = word                       ;* insert the word XXX generalize to row/col... too easy.
+* can't do this unless unless we update both rows and cols at the same time
+* so instead, we're putting the play on a copy of the board without updating the server, rebuilding board_lines_text from that, 
+* and then validating the play with count_invalid_words()
+*       board_lines_text_cp<i> pos(0) len(offset) len(word) = word
 
         board_cp = copy(board)
-
-* XXXXX move this mess to a subroutine?
 
         play_on_board(board_cp, word, x, y, i, offset)
 
@@ -617,7 +607,6 @@ play_2  subline_text span(' ') = ''                                :s(play_2)   
 
         board_lines_pat = board_lines_pat_cp
         board_lines_text = board_lines_text_cp
-
                                                                          :f(play_advance_offset)       ;* XXXXX iterate over words instead, then play_advance_offset if exhausted
 
 
@@ -629,7 +618,7 @@ play_no_more_lines
 
         window_size = window_size - 1
         ge(window_size, 1)                                         :s(play_start)
-      output = "XXX well, guess we didn't find anything.  window size dropped below 1."  :(wait_for_the_human)
+      output = 'well, guess we didn't find anything.'              :(wait_for_the_human)
 
 play_success
 
@@ -637,7 +626,7 @@ play_success
 
         draw_rack()
 
-      output = "XXX success!?"
+      output = "success!?"
 
        
 * wait for the human

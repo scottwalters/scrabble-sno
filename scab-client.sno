@@ -6,9 +6,9 @@
 
         srandomdev()
 
-*       dictfile = 'twl06.txt'                          ;* whole thing
+        dictfile = 'twl06.txt'                          ;* whole thing
 *       dictfile = 'twl06.txt.test'                     ;* part way through a
-        dictfile = 'twl06.txt.test2'                    ;* through e
+*       dictfile = 'twl06.txt.test2'                    ;* through e
 
         nums = '-0123456789'
 
@@ -72,8 +72,10 @@ subpermutations2
         i = 0                                                         ;* index in to ana_dict, looking for matches
         res_i = 0                                                     ;* index in to res, recording results
         pat = pos(0)                                                  ;* pattern gets built as a function of letters in the sorted word we're looking searching for matches for
-        pat3 = pos(0)
-subpermutations2_0                                                    ;* 
+
+* XXXXXXX may want to build a pattern based on part of the line
+*        pat3 = pos(0)
+*subpermutations2_0                                                    ;* 
 
 subpermutations2_1
         str len(1) . s1 rem . str                       :f(subpermutations2_2)         ;* pick out the next letter from our sorted rack tiles
@@ -90,8 +92,9 @@ subpermutations2_3
 subpermutations2_4          
         anagrams ( span(&lcase) . word span(' ') ) = '' :f(subpermutations2_3)
     output = 'XXXX subpermutations2 trying to match >' prefix word '< against extra restriction pattern which looks like >' line '<'
+
 * complicated and not working for some reason now
-*       (prefix word '**************' ) pat2            :f(subpermutations2_4)   ;* if user extra user supplied pat doesn't match the word prefixed with prefix, don't return it
+        (prefix word '**************' ) pat2            :f(subpermutations2_4)   ;* if user extra user supplied pat doesn't match the word prefixed with prefix, don't return it
         res< res_i = res_i + 1 > = word                 :(subpermutations2_4)
         
 subpermutations2_last
@@ -288,7 +291,7 @@ crawl_board_x
         board_lines_text<15 + x> = board_lines_text<15 + x> letter
 
 *       output = "debug: datatype board_lines y = " y " is " datatype(board_lines<y>)
-        lt(x, 30)                                          :s(crawl_board_x)f(crawl_board_y)
+        lt(x, 15)                                          :s(crawl_board_x)f(crawl_board_y)
 build_board_lines_arrays_end
 
 * count_invalid_words
@@ -564,7 +567,7 @@ play_2  subline_text span(' ') = ''                                :s(play_2)   
 * XXX for now, require that we abut a word on the start or end or span a word or both, before trying to play a word in this location
 * XXX ideally, letters on the previous or next line at least partially overlapping the play location would be adequate assuming the play doesn't add non-words to the board
 
-      output = 'XXX size of characters in window: ' size(subline_text)
+      output = 'XXX size of characters in window: ' size(subline_text) ' exact_size specified to subpermutations2: ' window_size + size(subline_text)
 
         gt(size(subline_text))                                     :f(play_advance_offset)        
 

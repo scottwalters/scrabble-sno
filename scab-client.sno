@@ -618,7 +618,7 @@ play_no_more_lines
 
         window_size = window_size - 1
         ge(window_size, 1)                                         :s(play_start)
-      output = 'well, guess we didn't find anything.'              :(wait_for_the_human)
+      output = "well, guess we didn't find anything."              :(wait_for_the_human)
 
 play_success
 

@@ -119,10 +119,11 @@ http_get_end
         define('move_tile(tile,x,y)')                     :(move_tile_end)          
 move_tile                                
         output = 'move tile...'
-        output = ident(x) 'x is null'                     ;* getting scab-client.sno:127: Error 4 in statement 165 at level 2 Null string in illegal context on the http_get() line
-        output = ident(y) 'y is null'
-        output = ident(cookies) 'cookies is null'
+        ;* getting scab-client.sno:127: Error 4 in statement 165 at level 2 Null string in illegal context on the http_get() line
+        output = ident(tile) 'tile is null'
+        output = 'XXX sometimes get Error 4 ... at level 2 Null string in illegal context here'
         http_get( .webfh, 'slowass.net', '/?action=move&id=' tile.id(tile) '&x=' x '&y=' y, 11704, cookies )  :f(http_error)
+        output = 'XXX made it past the point where we sometimes get that Error 4'
 move_read
         tmp = webfh                                       :s(move_read)
         http.close(.webfh)
@@ -199,10 +200,17 @@ draw_rack_next
         letters = letters tile.letter(tile)         :(draw_rack_next)
 draw_rack_1
         output = "drawing a tile for slot " i 
-        last_sushi = last_sushi + 1
-        random_sushi = remdr( random(), last_sushi )
+        gt(last_sushi)                              :s(draw_rack_2)
+        output = "no more sushi to draw!"           :(draw_rack_next)                        ;* returning less than 7 letters is fine so this is just debug
+draw_rack_2
+        random_sushi = 1 + remdr( random(), last_sushi )
+        output = ident( sushi< random_sushi > ) 'draw_rack:  expected sushi in slot ' random_sushi ' but there is none'
         move_tile( sushi< random_sushi >, 10, 10 )                                           ;* turn it over before moving it to our rack
         move_tile( sushi< random_sushi >, rack_x, rack_y + ( ( i - 1 ) * 60 ) )
+                                                                                             ;* shuffle sushi array down to fill the gap
+        sushi< random_sushi > = sushi< last_sushi >
+        sushi< last_sushi > =
+        last_sushi = last_sushi - 1
                                                     :(draw_rack_next)
 draw_rack_last
         draw_rack = letters                         :(return)
@@ -459,6 +467,7 @@ board_read
         read_board()                                      ;* if draw_rack() did draw, then we need to update our rack, etc from the board
         letters = draw_rack()                             ;* what we have in our hand after possibily drawing and reloading
         output = "rack: " letters
+        gt(size(letters))                                 :f(end_of_game)
 
 * dump the board
 
@@ -487,7 +496,6 @@ first_play
         word pos(0) len(1) . letter = ''                          :f(first_play_last)
         tile = find_tile_in_rack(letter)                   :f(tile_not_found_error)
         output = "moving " letter " to " x " , " y
-*       move_tile( tile, 204 + ( ( x - 1 ) * 62), 268 + ( ( y - 1 ) * 61 ) )                      ;* placing tiles on the board may need tweaking XX
         move_tile_to_board( tile, x, y )
         x = x + 1                                          :(first_play)
 first_play_last
@@ -640,13 +648,14 @@ wait_for_the_human
 *
 * error messages
 *
-
+end_of_game
+        output = "no more tiles! good game!"     :(wait_for_the_human)   ;* soft-error as the player can always reset the board and ask us to go again
 
 http_error
-        output = "HTTP something failed"         :(end)
+        output = "HTTP something failed"                                        :(end)  ;* would be nice to deal with this more gracefully... at least we could re-try the play
 
 tile_not_found_error
-        output = "find_tile_in_rack couldn't locate the tile we wanted"         :(end)
+        output = "find_tile_in_rack couldn't locate the tile we wanted"         :(end)  ;* shouldn't happen
 
 end
 

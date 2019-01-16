@@ -3,6 +3,7 @@
 
 -include 'random.sno'
 -include 'http.sno'
+-include 'host.sno'
 
         srandomdev()
 
@@ -121,9 +122,7 @@ move_tile
         output = 'move tile...'
         ;* getting scab-client.sno:127: Error 4 in statement 165 at level 2 Null string in illegal context on the http_get() line
         output = ident(tile) 'tile is null'
-        output = 'XXX sometimes get Error 4 ... at level 2 Null string in illegal context here'
         http_get( .webfh, 'slowass.net', '/?action=move&id=' tile.id(tile) '&x=' x '&y=' y, 11704, cookies )  :f(http_error)
-        output = 'XXX made it past the point where we sometimes get that Error 4'
 move_read
         tmp = webfh                                       :s(move_read)
         http.close(.webfh)
@@ -186,7 +185,8 @@ find_tile_in_rack_end
 * draw_rack
 
 * draw tiles as needed but return a string listing the letters we do have.
-* if less than a full rack (and it isn't the end of the game), reload the board and call again to see what was drawn.
+* caller needs to reload the board and call again to see what was drawn if we did draw things, so generally you'll do draw_rack(); read_board(); letters = draw_rack()
+* takes from the tile pile (the sushi bag) unless we found tiles in our rack area that weren't in their exact spots, then we use those first
 
         define('draw_rack()i,random_sushi,letters')        :(draw_rack_done)
 draw_rack
@@ -199,7 +199,12 @@ draw_rack_next
         differ(tile)                                :f(draw_rack_1)                          ;* branch if tile is empty
         letters = letters tile.letter(tile)         :(draw_rack_next)
 draw_rack_1
-        output = "drawing a tile for slot " i 
+        output = "drawing a tile for slot " i " last_sushi = " last_sushi
+        gt(last_rack_area)                          :f(draw_rack_1a)
+        output = "taking a tile from our rack area"
+        move_tile( rack_area< last_rack_area >, rack_x, rack_y + ( ( i - 1 ) * 60 ) )
+        last_rack_area = last_rack_area - 1         :(draw_rack_next)                        ;* in this case, the caller needs to reload the board and call us again
+draw_rack_1a
         gt(last_sushi)                              :s(draw_rack_2)
         output = "no more sushi to draw!"           :(draw_rack_next)                        ;* returning less than 7 letters is fine so this is just debug
 draw_rack_2
@@ -210,8 +215,8 @@ draw_rack_2
                                                                                              ;* shuffle sushi array down to fill the gap
         sushi< random_sushi > = sushi< last_sushi >
         sushi< last_sushi > =
-        last_sushi = last_sushi - 1
-                                                    :(draw_rack_next)
+        last_sushi = last_sushi - 1                                                          ;* in this case, the caller needs to reload the board and call us again
+                                                    :(draw_rack_next)                        ;* we don't get told what the letter is until we reload the board (else subscribe events)
 draw_rack_last
         draw_rack = letters                         :(return)
 draw_rack_done
@@ -225,22 +230,34 @@ draw_rack_done
 read_board
         output = "re-reading board..."
         board = array('1:15,1:15')
-        sushi = array('1:100')
-        rack = array('1:7')
+        sushi = array(100)
+        rack = array(7)
+        rack_area = array(7)                        ;* 
 
         last_board = 0
         last_tiles = 0
         last_sushi = 0
+        last_rack_area = 0
         board_is_empty = 1
+        dog_placed = ''
         http_get( .webfh, 'slowass.net', '/?action=board', 11704, cookies )   :f(http_error)
 read_board_again
         line = webfh                                             :f(read_board_done)
 *       output = line
 *       <img id="card095" alt="card095" src="/jpg/_.png" style="position:absolute; left: 616px; top: -9px; z-index: 1396; width: 57px; height: 57px;" onload="Drag.init(this);" >
-        line '<img id="' arb . id '" alt="' arb '" src="/jpg/' any('abcdefghijklmnopqrstuvwxyz_') . letter '.png" style="position:absolute; left: ' 
+        line '<img id="' arb . id '" alt="' arb '" src="/jpg/' arb . letter '.png" style="position:absolute; left: ' 
 +            span(nums) . x 'px; top: ' span(nums) . y 'px; z-index'
 +                                                                :f(read_board_again)
 *       output = "found letter " letter " x " x " y " y " id " id
+
+*       the dog token
+        ident(id, 'dog')                                         :f(board_sort_tiles_0)
+        dog_x = x; dog_y = y  
+        output = "dog found"
+        dog = tile.new('#', 'dog')
+        lt(y, 85) gt(x, 1050) lt(x, 1211)                        :f(board_sort_tiles_0)             ;* if the dog token is found and it is on its pad
+        output = "dog found and on the pad"
+        dog_placed = 1                                           :(read_board_again)
 
 *       undrawn tiles still in the pile
 board_sort_tiles_0
@@ -259,12 +276,22 @@ board_sort_tiles_1
         board_is_empty = 0
                                                                  :(read_board_again)
 board_sort_tiles_2
-        eq( x, rack_x ) ge( y, rack_y ) le( y, rack_y + 60 * 7)  :f(board_sort_tiles_3)
+
+*       tiles in our rack
+*       eq( x, rack_x ) ge( y, rack_y ) le( y, rack_y + 60 * 7)  :f(board_sort_tiles_3)
+        ge( x, rack_x - 30 ) le( x, rack_x + 30 ) ge( y, rack_y - 60 ) le( y, rack_y + 60 * 7 + 60 )  :f(board_sort_tiles_3)
       output = "found a tile on our rack at y " y
+        eq( x, rack_x ) eq( remdr( y - rack_y, 60 ), 0 )         :f(board_sort_tiles_2a)
         y = 1 + ( y - rack_y) / 60
       output = "     that's rack at position " y
-        rack<y> = tile.new(letter, id)
-                                                                 :(read_board_again)
+        rack<y> = tile.new(letter, id)                            :(read_board_again)
+
+board_sort_tiles_2a
+*       okay, we have a tile in our rack area but it's misaligned
+*       make a note of it and then use it first when we next go to draw, which might be right away if there aren't 7 letters in the exact positions on the board to be in our rack
+      output = "     in our rack area but not aligned"
+        rack_area< last_rack_area = last_rack_area + 1 > = tile.new(letter, id)   :(read_board_again)
+
 board_sort_tiles_3
         output = 'XXX tile out of range: ' x ' ' y ' ' letter    :(read_board_again)          ;* unless bugs appear, this is fine... any out of range tile is just in someone's rack
 read_board_done
@@ -460,6 +487,13 @@ board_read
         output = "board page..."
 
         read_board()
+        differ(dog_placed)                                :s(board_read_1)
+
+        output = "dog not in place, waiting"              :(wait_for_the_human)
+
+board_read_1
+        move_tile(dog, dog_x + 15, dog_y + 10 )           ;* move the little dog figurine just a little just so that the player knows we're here
+        output = "dog in place, playing"
 
 * draw as needed
 
@@ -641,8 +675,29 @@ play_success
 
 wait_for_the_human
 
-        output = "press enter..."
-        tmp = input                                                ;* wait for the human
+*       output = "press enter..."
+*       tmp = input                                                ;* wait for the human
+
+        ne(dog_x, 900) ne(dog_y, 10) move_tile(dog, 900, 10)       ;* move the little dog figurine off the pad so that next loop, unless there is human intervention, we don't run... but if the dog is already there, don't create extra events
+        dog_placed = ''
+
+        output = "waiting..."
+
+*       host(1, 'sleep 10')                                        ;* this returns instantly if we've gobbled up all available memory.  yup, can't get this to work worth a damn.
+
+        generation = ident(generation) 0                           ;* default to 0. server tells us the current value, which is the number of tile moves to date.
+                                                                   ;* /updator?action=updator returns immediately if our generation is less than current, waits until something moves
+        http_get( .webfh, 'slowass.net', '/updator?action=updator&player_id=computer&generation=' generation, 11704, cookies )  :f(http_error)
+wait_read
+        tmp = webfh                                       :f(wait_read_done)
+*       output = tmp
+        tmp 'sync: ' span(nums) . generation                       ;* matches:   Alpha/testing Illuminati server / sync: 100
+                                                          :(wait_read)
+wait_read_done
+        http.close(.webfh)
+      output = 'generation ' generation
+
+
                                          :(board_read)             ;* loop
 
 *
